@@ -1,124 +1,259 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>颜色八音盒</title>
+    <title>颜色八音盒 - 改进版</title>
     <style>
-        body { margin: 0; overflow: hidden; }
-        #camera { width: 100vw; height: 100vh; }
-        #target {
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #camera { width: 100vw; height: 100vh; object-fit: cover; }
+        .target-point {
             position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 50px; height: 50px;
+            width: 40px;
+            height: 40px;
             border: 3px solid white;
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-shadow: 0 0 10px rgba(0,0,0,0.7);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
         }
+        #target1 { top: 30%; left: 30%; border-color: #ff0000; }
+        #target2 { top: 50%; left: 50%; border-color: #00ff00; }
+        #target3 { top: 70%; left: 70%; border-color: #0000ff; }
         #colorInfo {
             position: absolute;
             top: 20px; left: 20px;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.8);
             color: white;
-            padding: 10px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px; left: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin: 5px;
             border-radius: 5px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <video id="camera" autoplay playsinline></video>
-    <div id="target"></div>
-    <div id="colorInfo">正在启动摄像头...</div>
+    <div class="target-point" id="target1"></div>
+    <div class="target-point" id="target2"></div>
+    <div class="target-point" id="target3"></div>
+    <div id="colorInfo">请点击屏幕启动摄像头</div>
+    <div id="controls">
+        <button onclick="toggleSmooth()">平滑模式: 开启</button>
+        <button onclick="toggleCamera()">切换摄像头</button>
+    </div>
 
     <script>
-        // 获取摄像头权限
+        // 音频上下文和状态变量
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let currentOscillators = [null, null, null];
+        let lastHues = [0, 0, 0];
+        let lastPlayTimes = [0, 0, 0];
+        let isSmoothMode = true;
+        let cameraStarted = false;
+        let currentFacingMode = 'environment';
+        
+        // 获取DOM元素
         const video = document.getElementById('camera');
         const colorInfo = document.getElementById('colorInfo');
         
-        // 音频上下文
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        let currentOscillator = null;
-        
-        // 添加点击启动功能
-let cameraStarted = false;
+        // 点击启动摄像头
+        function startCameraOnClick() {
+            if (cameraStarted) return;
+            
+            cameraStarted = true;
+            colorInfo.textContent = '正在启动摄像头...';
+            
+            // 启动摄像头
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: { ideal: currentFacingMode },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                } 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                colorInfo.textContent = '后置摄像头已开启 - 开始检测颜色';
+                startColorDetection();
+            })
+            .catch(err => {
+                console.log('后置摄像头失败:', err);
+                colorInfo.textContent = '后置摄像头失败，尝试普通摄像头';
+                // 降级到普通摄像头
+                navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    colorInfo.textContent = '摄像头已开启 - 开始检测颜色';
+                    startColorDetection();
+                })
+                .catch(finalErr => {
+                    colorInfo.textContent = '摄像头启动失败: ' + finalErr.message;
+                });
+            });
+        }
 
-function startCameraOnClick() {
-    if (cameraStarted) return;
-    
-    cameraStarted = true;
-    colorInfo.textContent = '正在启动摄像头...';
-    
-    // 后置摄像头代码
-    navigator.mediaDevices.getUserMedia({ 
-        video: { 
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-        } 
-    })
-    .then(stream => {
-        video.srcObject = stream;
-        colorInfo.textContent = '后置摄像头已开启 - 开始检测颜色';
-        startColorDetection();
-    })
-    .catch(err => {
-        colorInfo.textContent = '后置摄像头失败，尝试普通摄像头';
-        // 降级到普通摄像头
-        navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-            video.srcObject = stream;
-            colorInfo.textContent = '摄像头已开启 - 开始检测颜色';
-            startColorDetection();
-        });
-    });
-}
-
-// 点击页面任意位置启动摄像头
-document.addEventListener('click', startCameraOnClick);
-document.addEventListener('touchstart', startCameraOnClick);
-
-// 修改初始提示
-colorInfo.textContent = '请点击屏幕任意位置启动摄像头和声音';
-                // 设置canvas尺寸与视频一致
+        // 开始颜色检测
+        function startColorDetection() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const targetPoints = [
+                { x: 0.3, y: 0.3 }, // 对应target1
+                { x: 0.5, y: 0.5 }, // 对应target2
+                { x: 0.7, y: 0.7 }  // 对应target3
+            ];
+            
+            function detectColor() {
+                if (!video.srcObject || video.videoWidth === 0) {
+                    requestAnimationFrame(detectColor);
+                    return;
+                }
+                
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
-                
-                // 绘制当前视频帧
                 ctx.drawImage(video, 0, 0);
                 
-                // 获取中心点颜色（目标区域）
-                const x = canvas.width / 2;
-                const y = canvas.height / 2;
-                const pixel = ctx.getImageData(x, y, 1, 1).data;
+                let infoText = '颜色检测中...<br>';
                 
-                const [r, g, b] = pixel;
+                // 检测三个点的颜色
+                targetPoints.forEach((point, index) => {
+                    const x = Math.floor(point.x * canvas.width);
+                    const y = Math.floor(point.y * canvas.height);
+                    const pixel = ctx.getImageData(x, y, 1, 1).data;
+                    const [r, g, b] = pixel;
+                    const hsl = rgbToHsl(r, g, b);
+                    const [h, s, l] = hsl;
+                    
+                    infoText += `点${index+1}: RGB(${r},${g},${b}) HSL(${Math.round(h*360)}°,${Math.round(s*100)}%,${Math.round(l*100)}%)<br>`;
+                    
+                    // 播放对应声音
+                    playSoundFromColor(h, s, l, index);
+                });
                 
-                // 转换为HSL色彩空间
-                const hsl = rgbToHsl(r, g, b);
-                const [h, s, l] = hsl;
-                
-                
-// 更新显示信息
-                colorInfo.innerHTML = 
-                    `RGB: ${r},${g},${b}<br>
-                     HSL: ${Math.round(h*360)}°, ${Math.round(s*100)}%, ${Math.round(l*100)}%`;
-                
-                // 根据颜色播放声音
-                playSoundFromColor(h, s, l);
-                
-                // 持续检测
+                colorInfo.innerHTML = infoText;
                 requestAnimationFrame(detectColor);
             }
             
             detectColor();
         }
         
+        // 改进的颜色转声音函数
+        function playSoundFromColor(hue, saturation, lightness, pointIndex) {
+            const now = Date.now();
+            const timeSinceLastPlay = now - lastPlayTimes[pointIndex];
+            
+            // 平滑模式：防抖处理
+            if (isSmoothMode) {
+                const hueDifference = Math.abs(hue - lastHues[pointIndex]);
+                if (hueDifference < 0.03 && timeSinceLastPlay < 300) {
+                    return;
+                }
+            }
+            
+            lastHues[pointIndex] = hue;
+            lastPlayTimes[pointIndex] = now;
+            
+            // 停止该点的上一个声音
+            if (currentOscillators[pointIndex]) {
+                currentOscillators[pointIndex].stop();
+            }
+            
+            // 白色静音
+            if (lightness > 0.85) {
+                return;
+            }
+            
+            // 黑色鼓点
+            if (lightness < 0.15) {
+                playDrum(pointIndex);
+                return;
+            }
+            
+            // 五声音阶（更和谐）
+            const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+            const noteIndex = Math.floor(hue * pentatonicScale.length);
+            const baseFrequency = pentatonicScale[noteIndex];
+            
+            // 饱和度控制八度（更明显的音高变化）
+            const octave = Math.floor(saturation * 2) + 1;
+            const frequency = baseFrequency * octave;
+            
+            // 亮度控制音量（指数曲线让变化更明显）
+            const volume = Math.pow(lightness, 1.5) * 0.6;
+            
+            // 不同点使用不同音色
+            const waveTypes = ['sine', 'triangle', 'sawtooth'];
+            const waveType = waveTypes[pointIndex % waveTypes.length];
+            
+            // 创建声音
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = waveType;
+            oscillator.frequency.value = frequency;
+            
+            // 平滑的淡入淡出
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.1);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            currentOscillators[pointIndex] = oscillator;
+            
+            // 0.5秒后自动停止，避免声音堆积
+            setTimeout(() => {
+                if (currentOscillators[pointIndex] === oscillator) {
+                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                    setTimeout(() => {
+                        oscillator.stop();
+                    }, 100);
+                }
+            }, 500);
+        }
+        
+        function playDrum(pointIndex) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.2);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.2);
+        }
+        
+        // RGB转HSL
         function rgbToHsl(r, g, b) {
             r /= 255; g /= 255; b /= 255;
             const max = Math.max(r, g, b), min = Math.min(r, g, b);
             let h, s, l = (max + min) / 2;
             
             if (max === min) {
-                h = s = 0; // 灰色
+                h = s = 0;
             } else {
                 const d = max - min;
                 s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
@@ -132,67 +267,40 @@ colorInfo.textContent = '请点击屏幕任意位置启动摄像头和声音';
             return [h, s, l];
         }
         
-        function playSoundFromColor(hue, saturation, lightness) {
-            // 停止当前声音
-            if (currentOscillator) {
-                currentOscillator.stop();
-            }
-            
-            // 白色或接近白色时静音
-            if (lightness > 0.9) {
-                return;
-            }
-            
-            // 黑色或接近黑色时播放鼓点
-            if (lightness < 0.1) {
-                playDrum();
-                return;
-            }
-            
-            // 创建新振荡器
-            currentOscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            // 色相映射到音高 (Do Re Mi)
-            const notes = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25]; // C4 to C5
-            const noteIndex = Math.floor(hue * notes.length);
-            const frequency = notes[noteIndex];
-            
-            // 饱和度映射到音高微调
-            const detune = (saturation - 0.5) * 100; // -50 到 +50 音分
-            
-            // 亮度映射到音量
-            const volume = lightness * 0.5; // 限制最大音量
-            
-            currentOscillator.type = 'sine';
-            currentOscillator.frequency.value = frequency;
-            currentOscillator.detune.value = detune;
-            gainNode.gain.value = volume;
-            
-            currentOscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            currentOscillator.start();
+        // 控制函数
+        function toggleSmooth() {
+            isSmoothMode = !isSmoothMode;
+            document.querySelector('button').textContent = 
+                `平滑模式: ${isSmoothMode ? '开启' : '关闭'}`;
         }
         
-        function playDrum() {
-            // 简单的鼓声效果
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
+        function toggleCamera() {
+            if (!cameraStarted) return;
             
-            oscillator.type = 'sine';
-            oscillator.frequency.value = 100;
-            oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.1);
-            
-            gainNode.gain.value = 0.3;
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.1);
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            // 停止当前视频流
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            // 重启摄像头
+            startCameraOnClick();
         }
+        
+        // 点击事件监听
+        document.addEventListener('click', function() {
+            startCameraOnClick();
+            // 同时恢复音频上下文
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
+        
+        document.addEventListener('touchstart', function() {
+            startCameraOnClick();
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
     </script>
 </body>
 </html>
