@@ -38,22 +38,29 @@
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         let currentOscillator = null;
         
-        // 启动摄像头
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                video.srcObject = stream;
-                colorInfo.textContent = '摄像头已开启 - 开始检测颜色';
-                startColorDetection();
-            })
-            .catch(err => {
-                colorInfo.textContent = '无法访问摄像头: ' + err.message;
-            });
-        
-        function startColorDetection() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            function detectColor() {
+        // 启动摄像头 - 使用后置摄像头
+navigator.mediaDevices.getUserMedia({ 
+    video: { 
+        facingMode: { ideal: 'environment' }, // 优先使用后置摄像头
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+    } 
+})
+.then(stream => {
+    video.srcObject = stream;
+    colorInfo.textContent = '后置摄像头已开启 - 开始检测颜色';
+    startColorDetection();
+})
+.catch(err => {
+    colorInfo.textContent = '无法访问摄像头: ' + err.message;
+    // 如果后置摄像头失败，尝试普通摄像头
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+            video.srcObject = stream;
+            colorInfo.textContent = '摄像头已开启 - 开始检测颜色';
+            startColorDetection();
+        });
+});
                 // 设置canvas尺寸与视频一致
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
