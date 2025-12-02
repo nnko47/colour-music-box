@@ -20,43 +20,51 @@
         #target3 { top: 30%; left: 70%; border-color: #0000ff; }
         #colorInfo {
             position: absolute;
-            top: 20px; left: 20px;
-            background: rgba(0,0,0,0.8);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85);
             color: white;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 14px;
+            padding: 30px;
+            border-radius: 15px;
+            font-size: 18px;
             backdrop-filter: blur(10px);
+            text-align: center;
+            max-width: 80%;
+            line-height: 1.6;
         }
         #controls {
             position: absolute;
-            bottom: 20px; left: 20px;
-            background: rgba(0,0,0,0.8);
+            bottom: 25px;
+            left: 25px;
+            background: rgba(0,0,0,0.85);
             color: white;
-            padding: 15px;
-            border-radius: 10px;
+            padding: 20px;
+            border-radius: 15px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
         }
         .control-group {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 8px;
         }
         .control-label {
-            font-size: 12px;
-            opacity: 0.8;
+            font-size: 16px;
+            opacity: 0.9;
+            font-weight: bold;
         }
         button {
             background: #4CAF50;
             color: white;
             border: none;
-            padding: 8px 12px;
-            border-radius: 5px;
+            padding: 12px 18px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 16px;
             transition: background 0.3s;
+            min-width: 60px;
         }
         button:hover {
             background: #45a049;
@@ -69,10 +77,11 @@
         }
         .track-controls {
             display: flex;
-            gap: 5px;
+            gap: 10px;
         }
         .track-btn {
-            min-width: 40px;
+            min-width: 50px;
+            padding: 12px 0;
         }
     </style>
 </head>
@@ -81,7 +90,10 @@
     <div class="target-point" id="target1"></div>
     <div class="target-point" id="target2"></div>
     <div class="target-point" id="target3"></div>
-    <div id="colorInfo">Click screen to start camera</div>
+    <div id="colorInfo">
+        Click screen to start camera<br>
+        Scan different colors to generate music
+    </div>
     <div id="controls">
         <div class="control-group">
             <div class="control-label">Audio Tracks</div>
@@ -163,6 +175,9 @@
             })
             .then(stream => {
                 video.srcObject = stream;
+                colorInfo.style.top = '20px';
+                colorInfo.style.left = '20px';
+                colorInfo.style.transform = 'translate(0, 0)';
                 colorInfo.textContent = 'Back camera active - Detecting colors';
                 startColorDetection();
             })
@@ -173,6 +188,9 @@
                 navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     video.srcObject = stream;
+                    colorInfo.style.top = '20px';
+                    colorInfo.style.left = '20px';
+                    colorInfo.style.transform = 'translate(0, 0)';
                     colorInfo.textContent = 'Camera active - Detecting colors';
                     startColorDetection();
                 })
@@ -281,23 +299,19 @@
             const octaveRange = Math.floor(saturation * 3); // 0, 1, or 2 octave shift
             const frequency = baseFrequency * Math.pow(2, octaveRange); // Exponential octave shift
             
-            // Volume with exponential curve
-            const volume = Math.pow(lightness, 2) * 0.5; // More dynamic volume
+            // Original volume curve (reverted)
+            const volume = Math.pow(lightness, 1.5) * 0.6;
             
             // Different waveforms for different tracks
             const waveTypes = ['sine', 'triangle', 'sawtooth'];
             const waveType = waveTypes[pointIndex % waveTypes.length];
             
-            // Create sound
+            // Create sound (removed detune effect)
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
             
-            // Add slight detuning for more interesting sound
-            const detune = (hue - 0.5) * 50; // -25 to +25 cents
-            
             oscillator.type = waveType;
             oscillator.frequency.value = frequency;
-            oscillator.detune.value = detune;
             
             // Smooth fade in/out
             gainNode.gain.setValueAtTime(0, audioContext.currentTime);
@@ -309,15 +323,15 @@
             oscillator.start();
             currentOscillators[pointIndex] = oscillator;
             
-            // Auto stop after 0.8 seconds to prevent sound buildup
+            // Auto stop after 0.5 seconds to prevent sound buildup
             setTimeout(() => {
                 if (currentOscillators[pointIndex] === oscillator) {
-                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
                     setTimeout(() => {
                         oscillator.stop();
-                    }, 200);
+                    }, 100);
                 }
-            }, 800);
+            }, 500);
         }
         
         function playDrum(pointIndex) {
@@ -331,7 +345,7 @@
             oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
             oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, audioContext.currentTime + 0.1);
             
-            gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
             
             oscillator.connect(gainNode);
