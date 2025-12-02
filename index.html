@@ -13,7 +13,10 @@
             border-radius: 50%;
             box-shadow: 0 0 15px rgba(0,0,0,0.8);
             transform: translate(-50%, -50%);
-            pointer-events: none;
+            cursor: move;
+            touch-action: none;
+            user-select: none;
+            z-index: 100;
         }
         #target1 { top: 30%; left: 30%; border-color: #ff0000; }
         #target2 { top: 30%; left: 50%; border-color: #00ff00; }
@@ -33,6 +36,7 @@
             max-width: 85%;
             line-height: 1.8;
             font-weight: bold;
+            z-index: 90;
         }
         #controls {
             position: absolute;
@@ -45,6 +49,7 @@
             display: flex;
             flex-direction: column;
             gap: 20px;
+            z-index: 90;
         }
         .control-group {
             display: flex;
@@ -112,9 +117,9 @@
 </head>
 <body>
     <video id="camera" autoplay playsinline></video>
-    <div class="target-point" id="target1"></div>
-    <div class="target-point" id="target2"></div>
-    <div class="target-point" id="target3"></div>
+    <div class="target-point" id="target1" data-index="0"></div>
+    <div class="target-point" id="target2" data-index="1"></div>
+    <div class="target-point" id="target3" data-index="2"></div>
     <div id="colorInfo">
         Click screen to start camera<br>
         Scan different colors to generate music
@@ -157,7 +162,14 @@
         let isSmoothMode = true;
         let cameraStarted = false;
         let currentFacingMode = 'environment';
-        let activeTracks = [true, true, true]; // Track 1, 2, 3 individual states
+        let activeTracks = [true, true, true];
+        
+        // Target positions (will be updated when user drags)
+        let targetPoints = [
+            { x: 0.3, y: 0.3 }, // target1
+            { x: 0.5, y: 0.3 }, // target2
+            { x: 0.7, y: 0.3 }  // target3
+        ];
         
         // Get DOM elements
         const video = document.getElementById('camera');
@@ -172,6 +184,110 @@
             document.getElementById('indicator2'),
             document.getElementById('indicator3')
         ];
+        
+        // Dragging state
+        let isDragging = false;
+        let dragTarget = null;
+        let dragIndex = -1;
+        let dragOffset = { x: 0, y: 0 };
+        
+        // Initialize drag events
+        function initDragEvents() {
+            targetElements.forEach((target, index) => {
+                // Mouse events
+                target.addEventListener('mousedown', startDrag);
+                target.addEventListener('touchstart', startDragTouch);
+                
+                // Set data-index for identification
+                target.setAttribute('data-index', index);
+            });
+            
+            // Document events for dragging
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('touchmove', doDragTouch);
+            document.addEventListener('mouseup', stopDrag);
+            document.addEventListener('touchend', stopDrag);
+            document.addEventListener('touchcancel', stopDrag);
+        }
+        
+        // Mouse drag functions
+        function startDrag(e) {
+            e.preventDefault();
+            isDragging = true;
+            dragTarget = e.target;
+            dragIndex = parseInt(dragTarget.getAttribute('data-index'));
+            
+            const rect = dragTarget.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            dragTarget.style.opacity = '0.8';
+            dragTarget.style.cursor = 'grabbing';
+        }
+        
+        function startDragTouch(e) {
+            if (e.touches.length !== 1) return;
+            e.preventDefault();
+            isDragging = true;
+            dragTarget = e.target;
+            dragIndex = parseInt(dragTarget.getAttribute('data-index'));
+            
+            const rect = dragTarget.getBoundingClientRect();
+            dragOffset.x = e.touches[0].clientX - rect.left;
+            dragOffset.y = e.touches[0].clientY - rect.top;
+            
+            dragTarget.style.opacity = '0.8';
+        }
+        
+        function doDrag(e) {
+            if (!isDragging || !dragTarget) return;
+            e.preventDefault();
+            
+            const x = e.clientX - dragOffset.x;
+            const y = e.clientY - dragOffset.y;
+            
+            updateTargetPosition(x, y);
+        }
+        
+        function doDragTouch(e) {
+            if (!isDragging || !dragTarget || e.touches.length !== 1) return;
+            e.preventDefault();
+            
+            const x = e.touches[0].clientX - dragOffset.x;
+            const y = e.touches[0].clientY - dragOffset.y;
+            
+            updateTargetPosition(x, y);
+        }
+        
+        function updateTargetPosition(x, y) {
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+            
+            // Calculate percentage position
+            const percentX = (x + 25) / screenWidth; // +25 for center offset
+            const percentY = (y + 25) / screenHeight; // +25 for center offset
+            
+            // Clamp to screen bounds
+            const clampedX = Math.max(0.05, Math.min(0.95, percentX));
+            const clampedY = Math.max(0.05, Math.min(0.95, percentY));
+            
+            // Update CSS position
+            dragTarget.style.left = `${clampedX * 100}%`;
+            dragTarget.style.top = `${clampedY * 100}%`;
+            
+            // Update targetPoints array for color detection
+            targetPoints[dragIndex] = { x: clampedX, y: clampedY };
+        }
+        
+        function stopDrag() {
+            if (!isDragging || !dragTarget) return;
+            
+            isDragging = false;
+            dragTarget.style.opacity = '1';
+            dragTarget.style.cursor = 'move';
+            dragTarget = null;
+            dragIndex = -1;
+        }
         
         // Toggle individual track function
         function toggleTrack(trackIndex) {
@@ -248,13 +364,6 @@
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // Target positions
-            const targetPoints = [
-                { x: 0.3, y: 0.3 }, // target1
-                { x: 0.5, y: 0.3 }, // target2
-                { x: 0.7, y: 0.3 }  // target3
-            ];
-            
             function detectColor() {
                 if (!video.srcObject || video.videoWidth === 0) {
                     requestAnimationFrame(detectColor);
@@ -292,7 +401,7 @@
             detectColor();
         }
         
-        // Enhanced color to sound function with more obvious changes
+        // Enhanced color to sound function with adjusted blue track volume
         function playSoundFromColor(hue, saturation, lightness, pointIndex) {
             const now = Date.now();
             const timeSinceLastPlay = now - lastPlayTimes[pointIndex];
@@ -314,7 +423,7 @@
             }
             
             // Enhanced white detection
-            const isDesaturated = saturation < 0.10; // More tolerant for desaturated colors
+            const isDesaturated = saturation < 0.10;
             const isLightGray = lightness > 0.82;
             
             if (isLightGray || (isDesaturated && lightness > 0.5)) {
@@ -343,8 +452,15 @@
             const octaveRange = Math.floor(saturation * 4); // 0, 1, 2, or 3 octave shift
             const frequency = baseFrequency * Math.pow(2, octaveRange);
             
-            // ENHANCED: More obvious volume changes
-            const volume = Math.pow(lightness, 1.2) * 0.8; // Steeper curve for more obvious changes
+            // ADJUSTED: Volume adjustment for blue track (pointIndex 2)
+            let baseVolume = Math.pow(lightness, 1.2) * 0.8;
+            
+            // Reduce volume for blue track (Track 3) by 40%
+            if (pointIndex === 2) {
+                baseVolume *= 0.6; // 60% of original volume
+            }
+            
+            const volume = baseVolume;
             
             // Different waveforms for different tracks
             const waveTypes = ['sine', 'triangle', 'sawtooth'];
@@ -383,13 +499,19 @@
             const gainNode = audioContext.createGain();
             
             // Different drum sounds for different points
-            const baseFreq = [70, 90, 110][pointIndex % 3]; // More distinct frequencies
+            const baseFreq = [70, 90, 110][pointIndex % 3];
+            
+            // Reduce drum volume for blue track
+            let drumVolume = 0.4;
+            if (pointIndex === 2) {
+                drumVolume *= 0.6; // 60% of original volume
+            }
             
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
             oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 0.4, audioContext.currentTime + 0.12);
             
-            gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(drumVolume, audioContext.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.18);
             
             oscillator.connect(gainNode);
@@ -441,7 +563,11 @@
         }
         
         // Click event listeners
-        document.addEventListener('click', function() {
+        document.addEventListener('click', function(e) {
+            // Don't start camera if clicking on controls or targets
+            if (e.target.closest('#controls') || e.target.closest('.target-point')) {
+                return;
+            }
             startCameraOnClick();
             // Also resume audio context
             if (audioContext.state === 'suspended') {
@@ -449,12 +575,19 @@
             }
         });
         
-        document.addEventListener('touchstart', function() {
+        document.addEventListener('touchstart', function(e) {
+            // Don't start camera if touching controls or targets
+            if (e.target.closest('#controls') || e.target.closest('.target-point')) {
+                return;
+            }
             startCameraOnClick();
             if (audioContext.state === 'suspended') {
                 audioContext.resume();
             }
         });
+        
+        // Initialize drag events
+        initDragEvents();
     </script>
 </body>
 </html>
