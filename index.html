@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>颜色八音盒 - 改进版</title>
+    <title>Color Music Box</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
         #camera { width: 100vw; height: 100vh; object-fit: cover; }
@@ -35,15 +35,44 @@
             color: white;
             padding: 15px;
             border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .control-label {
+            font-size: 12px;
+            opacity: 0.8;
         }
         button {
             background: #4CAF50;
             color: white;
             border: none;
-            padding: 10px 15px;
-            margin: 5px;
+            padding: 8px 12px;
             border-radius: 5px;
             cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button.active {
+            background: #2196F3;
+        }
+        button.secondary {
+            background: #555;
+        }
+        .track-controls {
+            display: flex;
+            gap: 5px;
+        }
+        .track-btn {
+            min-width: 40px;
         }
     </style>
 </head>
@@ -52,14 +81,26 @@
     <div class="target-point" id="target1"></div>
     <div class="target-point" id="target2"></div>
     <div class="target-point" id="target3"></div>
-    <div id="colorInfo">请点击屏幕启动摄像头</div>
+    <div id="colorInfo">Click screen to start camera</div>
     <div id="controls">
-        <button onclick="toggleSmooth()">平滑模式: 开启</button>
-        <button onclick="toggleCamera()">切换摄像头</button>
+        <div class="control-group">
+            <div class="control-label">Audio Tracks</div>
+            <div class="track-controls">
+                <button class="track-btn" onclick="setActiveTracks(1)">1</button>
+                <button class="track-btn" onclick="setActiveTracks(2)">2</button>
+                <button class="track-btn active" onclick="setActiveTracks(3)">3</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <div class="control-label">Settings</div>
+            <button onclick="toggleSmooth()">Smooth: ON</button>
+            <button class="secondary" onclick="toggleCamera()">Switch Camera</button>
+        </div>
     </div>
 
     <script>
-        // 音频上下文和状态变量
+        // Audio context and state variables
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         let currentOscillators = [null, null, null];
         let lastHues = [0, 0, 0];
@@ -67,19 +108,52 @@
         let isSmoothMode = true;
         let cameraStarted = false;
         let currentFacingMode = 'environment';
+        let activeTracks = 3; // Default to 3 tracks
         
-        // 获取DOM元素
+        // Get DOM elements
         const video = document.getElementById('camera');
         const colorInfo = document.getElementById('colorInfo');
+        const targetElements = [
+            document.getElementById('target1'),
+            document.getElementById('target2'),
+            document.getElementById('target3')
+        ];
         
-        // 点击启动摄像头
+        // Set active tracks function
+        function setActiveTracks(count) {
+            activeTracks = count;
+            
+            // Update button states
+            document.querySelectorAll('.track-btn').forEach((btn, index) => {
+                if (index < count) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Update target visibility
+            targetElements.forEach((target, index) => {
+                target.style.display = index < count ? 'block' : 'none';
+            });
+            
+            // Stop sounds for disabled tracks
+            for (let i = count; i < 3; i++) {
+                if (currentOscillators[i]) {
+                    currentOscillators[i].stop();
+                    currentOscillators[i] = null;
+                }
+            }
+        }
+        
+        // Click to start camera
         function startCameraOnClick() {
             if (cameraStarted) return;
             
             cameraStarted = true;
-            colorInfo.textContent = '正在启动摄像头...';
+            colorInfo.textContent = 'Starting camera...';
             
-            // 启动摄像头
+            // Start camera
             navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: { ideal: currentFacingMode },
@@ -89,33 +163,35 @@
             })
             .then(stream => {
                 video.srcObject = stream;
-                colorInfo.textContent = '后置摄像头已开启 - 开始检测颜色';
+                colorInfo.textContent = 'Back camera active - Detecting colors';
                 startColorDetection();
             })
             .catch(err => {
-                console.log('后置摄像头失败:', err);
-                colorInfo.textContent = '后置摄像头失败，尝试普通摄像头';
-                // 降级到普通摄像头
+                console.log('Back camera failed:', err);
+                colorInfo.textContent = 'Back camera failed, trying front camera';
+                // Fallback to front camera
                 navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     video.srcObject = stream;
-                    colorInfo.textContent = '摄像头已开启 - 开始检测颜色';
+                    colorInfo.textContent = 'Camera active - Detecting colors';
                     startColorDetection();
                 })
                 .catch(finalErr => {
-                    colorInfo.textContent = '摄像头启动失败: ' + finalErr.message;
+                    colorInfo.textContent = 'Camera failed: ' + finalErr.message;
                 });
             });
         }
 
-        // 开始颜色检测
+        // Start color detection
         function startColorDetection() {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
+            
+            // Updated target positions (all on same row for better visibility)
             const targetPoints = [
-                { x: 0.3, y: 0.3 }, // 对应target1
-                { x: 0.5, y: 0.5 }, // 对应target2
-                { x: 0.7, y: 0.7 }  // 对应target3
+                { x: 0.3, y: 0.3 }, // target1
+                { x: 0.5, y: 0.3 }, // target2
+                { x: 0.7, y: 0.3 }  // target3
             ];
             
             function detectColor() {
@@ -128,10 +204,11 @@
                 canvas.height = video.videoHeight;
                 ctx.drawImage(video, 0, 0);
                 
-                let infoText = '颜色检测中...<br>';
+                let infoText = 'Color detection active<br>';
                 
-                // 检测三个点的颜色
-                targetPoints.forEach((point, index) => {
+                // Detect colors for active tracks only
+                for (let i = 0; i < activeTracks; i++) {
+                    const point = targetPoints[i];
                     const x = Math.floor(point.x * canvas.width);
                     const y = Math.floor(point.y * canvas.height);
                     const pixel = ctx.getImageData(x, y, 1, 1).data;
@@ -139,11 +216,11 @@
                     const hsl = rgbToHsl(r, g, b);
                     const [h, s, l] = hsl;
                     
-                    infoText += `点${index+1}: RGB(${r},${g},${b}) HSL(${Math.round(h*360)}°,${Math.round(s*100)}%,${Math.round(l*100)}%)<br>`;
+                    infoText += `Track ${i+1}: RGB(${r},${g},${b})<br>`;
                     
-                    // 播放对应声音
-                    playSoundFromColor(h, s, l, index);
-                });
+                    // Play corresponding sound
+                    playSoundFromColor(h, s, l, i);
+                }
                 
                 colorInfo.innerHTML = infoText;
                 requestAnimationFrame(detectColor);
@@ -152,12 +229,12 @@
             detectColor();
         }
         
-        // 改进的颜色转声音函数
+        // Enhanced color to sound function with wider pitch range
         function playSoundFromColor(hue, saturation, lightness, pointIndex) {
             const now = Date.now();
             const timeSinceLastPlay = now - lastPlayTimes[pointIndex];
             
-            // 平滑模式：防抖处理
+            // Smooth mode: debounce
             if (isSmoothMode) {
                 const hueDifference = Math.abs(hue - lastHues[pointIndex]);
                 if (hueDifference < 0.03 && timeSinceLastPlay < 300) {
@@ -168,46 +245,61 @@
             lastHues[pointIndex] = hue;
             lastPlayTimes[pointIndex] = now;
             
-            // 停止该点的上一个声音
+            // Stop previous sound for this point
             if (currentOscillators[pointIndex]) {
                 currentOscillators[pointIndex].stop();
             }
             
-            // 白色静音
-            if (lightness > 0.85) {
+            // Enhanced white detection (lightness > 0.7 = mute)
+            // Includes light grays and desaturated colors
+            const isDesaturated = saturation < 0.1; // Very low saturation = near gray
+            const isLightGray = lightness > 0.7;
+            
+            if (isLightGray || (isDesaturated && lightness > 0.5)) {
+                // Mute for white/light gray
                 return;
             }
             
-            // 黑色鼓点
+            // Black drum (darker than threshold)
             if (lightness < 0.15) {
                 playDrum(pointIndex);
                 return;
             }
             
-            // 五声音阶（更和谐）
-            const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
-            const noteIndex = Math.floor(hue * pentatonicScale.length);
-            const baseFrequency = pentatonicScale[noteIndex];
+            // Extended musical scale for more distinct notes
+            const extendedScale = [
+                130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94,  // Lower octave
+                261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88,   // Middle octave
+                523.25, 587.33, 659.25, 698.46, 783.99, 880.00, 987.77    // Higher octave
+            ];
             
-            // 饱和度控制八度（更明显的音高变化）
-            const octave = Math.floor(saturation * 2) + 1;
-            const frequency = baseFrequency * octave;
+            // More distinct note selection
+            const noteIndex = Math.floor(hue * extendedScale.length);
+            const baseFrequency = extendedScale[noteIndex];
             
-            // 亮度控制音量（指数曲线让变化更明显）
-            const volume = Math.pow(lightness, 1.5) * 0.6;
+            // Enhanced octave control (wider range)
+            const octaveRange = Math.floor(saturation * 3); // 0, 1, or 2 octave shift
+            const frequency = baseFrequency * Math.pow(2, octaveRange); // Exponential octave shift
             
-            // 不同点使用不同音色
+            // Volume with exponential curve
+            const volume = Math.pow(lightness, 2) * 0.5; // More dynamic volume
+            
+            // Different waveforms for different tracks
             const waveTypes = ['sine', 'triangle', 'sawtooth'];
             const waveType = waveTypes[pointIndex % waveTypes.length];
             
-            // 创建声音
+            // Create sound
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
             
+            // Add slight detuning for more interesting sound
+            const detune = (hue - 0.5) * 50; // -25 to +25 cents
+            
             oscillator.type = waveType;
             oscillator.frequency.value = frequency;
+            oscillator.detune.value = detune;
             
-            // 平滑的淡入淡出
+            // Smooth fade in/out
             gainNode.gain.setValueAtTime(0, audioContext.currentTime);
             gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.1);
             
@@ -217,36 +309,39 @@
             oscillator.start();
             currentOscillators[pointIndex] = oscillator;
             
-            // 0.5秒后自动停止，避免声音堆积
+            // Auto stop after 0.8 seconds to prevent sound buildup
             setTimeout(() => {
                 if (currentOscillators[pointIndex] === oscillator) {
-                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
                     setTimeout(() => {
                         oscillator.stop();
-                    }, 100);
+                    }, 200);
                 }
-            }, 500);
+            }, 800);
         }
         
         function playDrum(pointIndex) {
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
             
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.2);
+            // Different drum sounds for different points
+            const baseFreq = [80, 100, 120][pointIndex % 3];
             
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 0.5, audioContext.currentTime + 0.1);
+            
+            gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
             
             oscillator.connect(gainNode);
             gainNode.connect(audioContext.destination);
             
             oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.2);
+            oscillator.stop(audioContext.currentTime + 0.15);
         }
         
-        // RGB转HSL
+        // RGB to HSL
         function rgbToHsl(r, g, b) {
             r /= 255; g /= 255; b /= 255;
             const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -267,29 +362,30 @@
             return [h, s, l];
         }
         
-        // 控制函数
+        // Control functions
         function toggleSmooth() {
             isSmoothMode = !isSmoothMode;
-            document.querySelector('button').textContent = 
-                `平滑模式: ${isSmoothMode ? '开启' : '关闭'}`;
+            document.querySelectorAll('button')[3].textContent = 
+                `Smooth: ${isSmoothMode ? 'ON' : 'OFF'}`;
         }
         
         function toggleCamera() {
             if (!cameraStarted) return;
             
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-            // 停止当前视频流
+            // Stop current video stream
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
-            // 重启摄像头
+            // Restart camera
+            cameraStarted = false;
             startCameraOnClick();
         }
         
-        // 点击事件监听
+        // Click event listeners
         document.addEventListener('click', function() {
             startCameraOnClick();
-            // 同时恢复音频上下文
+            // Also resume audio context
             if (audioContext.state === 'suspended') {
                 audioContext.resume();
             }
@@ -301,6 +397,9 @@
                 audioContext.resume();
             }
         });
+        
+        // Initialize with 3 tracks
+        setActiveTracks(3);
     </script>
 </body>
 </html>
