@@ -1,475 +1,594 @@
+
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 声音电子绘画</title>
+    <title>Color Music Box</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; margin: 20px; background-color: #f4f4f4; }
-        #controls { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; background-color: #fff; border-radius: 8px; width: 800px; max-width: 90%; }
-        #canvas { border: 2px solid #333; cursor: crosshair; background-color: #fff; }
-        .slider-group { display: flex; align-items: center; margin-bottom: 10px; }
-        .slider-group label { width: 80px; font-weight: bold; }
-        .slider-group input[type="range"] { flex-grow: 1; margin-right: 15px; }
-        .value-display { width: 30px; text-align: right; }
-        #currentColor { width: 50px; height: 25px; border: 1px solid #000; margin-left: 20px; }
-        #brushSizeDisplay { margin-left: 10px; }
-        /* 录制功能样式 */
-        #recordingControls { margin-top: 15px; border-top: 1px dashed #ccc; padding-top: 10px; text-align: center; }
-        #recordingControls button { padding: 8px 15px; margin: 5px; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; transition: background-color 0.2s; }
-        #recordBtn { background-color: #e74c3c; color: white; }
-        #stopBtn { background-color: #f39c12; color: white; }
-        #playBtn { background-color: #2ecc71; color: white; }
-        .disabled { opacity: 0.5; pointer-events: none; }
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #camera { width: 100vw; height: 100vh; object-fit: cover; }
+        .target-point {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border: 4px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(0,0,0,0.8);
+            transform: translate(-50%, -50%);
+            cursor: move;
+            touch-action: none;
+            user-select: none;
+            z-index: 100;
+        }
+        #target1 { top: 30%; left: 30%; border-color: #ff0000; }
+        #target2 { top: 30%; left: 50%; border-color: #00ff00; }
+        #target3 { top: 30%; left: 70%; border-color: #0000ff; }
+        #colorInfo {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            font-size: 24px;
+            backdrop-filter: blur(15px);
+            text-align: center;
+            max-width: 85%;
+            line-height: 1.8;
+            font-weight: bold;
+            z-index: 90;
+        }
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 25px;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 90;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .control-label {
+            font-size: 20px;
+            opacity: 0.95;
+            font-weight: bold;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 20px;
+            transition: all 0.3s;
+            min-width: 80px;
+        }
+        button:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        button.active {
+            background: #2196F3;
+            box-shadow: 0 0 15px rgba(33, 150, 243, 0.7);
+        }
+        button.secondary {
+            background: #555;
+        }
+        button.toggle-btn {
+            min-width: 120px;
+            padding: 16px;
+            font-size: 18px;
+            margin: 5px;
+        }
+        .toggle-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .toggle-indicator {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        .toggle-indicator.active {
+            background: #4CAF50;
+            box-shadow: 0 0 10px #4CAF50;
+        }
+        .toggle-label {
+            font-size: 18px;
+            min-width: 80px;
+        }
     </style>
 </head>
 <body>
-
-    <h1>声音电子绘画 🎶</h1>
-
+    <video id="camera" autoplay playsinline></video>
+    <div class="target-point" id="target1" data-index="0"></div>
+    <div class="target-point" id="target2" data-index="1"></div>
+    <div class="target-point" id="target3" data-index="2"></div>
+    <div id="colorInfo">
+        Click screen to start camera<br>
+        Scan different colors to generate music
+    </div>
     <div id="controls">
-        <div class="slider-group">
-            <label for="hSlider">色相 (H)</label>
-            <input type="range" id="hSlider" min="0" max="360" value="0" oninput="updateColorAndPreview()">
-            <span class="value-display" id="hValue">0</span>°
+        <div class="control-group">
+            <div class="control-label">Track Controls</div>
+            <div class="toggle-group">
+                <div class="toggle-row">
+                    <div class="toggle-indicator active" id="indicator1"></div>
+                    <div class="toggle-label">Track 1</div>
+                    <button class="toggle-btn" onclick="toggleTrack(0)">ON</button>
+                </div>
+                <div class="toggle-row">
+                    <div class="toggle-indicator active" id="indicator2"></div>
+                    <div class="toggle-label">Track 2</div>
+                    <button class="toggle-btn" onclick="toggleTrack(1)">ON</button>
+                </div>
+                <div class="toggle-row">
+                    <div class="toggle-indicator active" id="indicator3"></div>
+                    <div class="toggle-label">Track 3</div>
+                    <button class="toggle-btn" onclick="toggleTrack(2)">ON</button>
+                </div>
+            </div>
         </div>
-        <div class="slider-group">
-            <label for="sSlider">饱和度 (S)</label>
-            <input type="range" id="sSlider" min="0" max="100" value="100" oninput="updateColorAndPreview()">
-            <span class="value-display" id="sValue">100</span>%
-        </div>
-        <div class="slider-group">
-            <label for="lSlider">明度 (L)</label>
-            <input type="range" id="lSlider" min="0" max="100" value="50" oninput="updateColorAndPreview()">
-            <span class="value-display" id="lValue">50</span>%
-        </div>
-
-        <div class="slider-group">
-            <label for="sizeSlider">笔刷大小</label>
-            <input type="range" id="sizeSlider" min="1" max="50" value="5" oninput="updateBrushSize()">
-            <span class="value-display" id="sizeValue">5</span>px
-            <span style="margin-left: 20px;">当前颜色:</span>
-            <div id="currentColor"></div>
-        </div>
-
-        <div id="recordingControls">
-            <p><strong>笔画录制与编曲：</strong></p>
-            <button id="recordBtn">🔴 录制</button>
-            <button id="stopBtn" class="disabled">⏹ 停止</button>
-            <button id="playBtn" class="disabled">▶️ 播放/预览</button>
-            <button id="clearBtn">🗑 清空画布和录音</button>
+        
+        <div class="control-group">
+            <div class="control-label">Settings</div>
+            <button onclick="toggleSmooth()">Smooth: ON</button>
+            <button class="secondary" onclick="toggleCamera()">Switch Camera</button>
         </div>
     </div>
 
-    <canvas id="canvas" width="800" height="400"></canvas>
-
     <script>
-        // ------------------------------------
-        // I. 全局配置与初始化
-        // ------------------------------------
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const hSlider = document.getElementById('hSlider');
-        const sSlider = document.getElementById('sSlider');
-        const lSlider = document.getElementById('lSlider');
-        const sizeSlider = document.getElementById('sizeSlider');
-        const currentColorDisplay = document.getElementById('currentColor');
-        const hValueDisplay = document.getElementById('hValue');
-        const sValueDisplay = document.getElementById('sValue');
-        const lValueDisplay = document.getElementById('lValue');
+        // Audio context and state variables
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let currentOscillators = [null, null, null];
+        let lastHues = [0, 0, 0];
+        let lastPlayTimes = [0, 0, 0];
+        let isSmoothMode = true;
+        let cameraStarted = false;
+        let currentFacingMode = 'environment';
+        let activeTracks = [true, true, true];
         
-        let isDrawing = false;
-        let lastX = 0;
-        let lastY = 0;
-
-        // Web Audio API 实例
-        let audioContext;
-        let currentOscillator = null;
-        let currentGain = null;
-        let drumBuffer = null; // 鼓点音频缓冲
+        // Target positions (will be updated when user drags)
+        let targetPoints = [
+            { x: 0.3, y: 0.3 }, // target1
+            { x: 0.5, y: 0.3 }, // target2
+            { x: 0.7, y: 0.3 }  // target3
+        ];
         
-        // 录制相关变量
-        let isRecording = false;
-        let recordingStartTime = 0;
-        let recordedStrokes = [];
-        let currentStroke = null;
-
-        // 颜色映射到 MIDI 音高（C4 = 60）
-        // 0(红) -> C(0), 60(黄) -> D(2), 120(绿) -> E(4), 180(青) -> F(5), 240(蓝) -> G(7), 300(紫) -> A(9), 330(洋红/红) -> B(11)
-        const BASE_MIDI = 48; // C3 (最低八度)
-
-        /** 初始化音频环境和加载鼓点采样 */
-        async function initializeAudio() {
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Get DOM elements
+        const video = document.getElementById('camera');
+        const colorInfo = document.getElementById('colorInfo');
+        const targetElements = [
+            document.getElementById('target1'),
+            document.getElementById('target2'),
+            document.getElementById('target3')
+        ];
+        const indicatorElements = [
+            document.getElementById('indicator1'),
+            document.getElementById('indicator2'),
+            document.getElementById('indicator3')
+        ];
+        
+        // Dragging state
+        let isDragging = false;
+        let dragTarget = null;
+        let dragIndex = -1;
+        let dragOffset = { x: 0, y: 0 };
+        
+        // Initialize drag events
+        function initDragEvents() {
+            targetElements.forEach((target, index) => {
+                // Mouse events
+                target.addEventListener('mousedown', startDrag);
+                target.addEventListener('touchstart', startDragTouch);
                 
-                // 模拟加载一个鼓点采样（实际项目中您需要加载一个真实的音频文件）
-                // 这里我们仅创建一个简单且短促的白噪音作为示例鼓点
-                drumBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.1, audioContext.sampleRate);
-                const data = drumBuffer.getChannelData(0);
-                for (let i = 0; i < data.length; i++) {
-                    data[i] = Math.random() * 2 - 1; // 随机值模拟噪音
-                }
-            }
-        }
-        
-        /** 将 HSL 参数转换为 CSS 颜色字符串 */
-        function getCssColor(h, s, l) {
-            return `hsl(${h}, ${s}%, ${l}%)`;
-        }
-
-        /** 将 HLS 转换为 MIDI 音高和音量 */
-        function getSoundParams(h, s, l) {
-            // 1. 色相 (H) -> 半音 (0-11)
-            // 简单线性映射：360度/12个半音 = 30度/半音
-            // 由于用户要求七个主音对应七种主色，我们使用更复杂的非线性映射，但为简化示例，仍采用线性：
-            let semitone = Math.round(h / 30); // 0-12，12和0一样
-            if (semitone === 12) semitone = 0;
-            
-            // 2. 饱和度 (S) -> 八度 (MIDI Offset)
-            // 100% S 映射到 3个八度 (36 semitones)
-            // 映射 S (0-100) 到 0-36 的半音偏移
-            const octaveOffset = Math.round((s / 100) * 36); 
-            
-            // 3. 明度 (L) -> 增益 (音量 0-1)
-            const gain = l / 100;
-            
-            // 4. 计算最终 MIDI Note Number
-            const midiNote = BASE_MIDI + semitone + octaveOffset;
-            
-            // 5. 转换 MIDI 到频率 (Hz)
-            const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
-            
-            return { frequency, gain };
-        }
-
-        /** 播放鼓点 */
-        function playDrum(delay = 0) {
-            if (!drumBuffer) return;
-            const source = audioContext.createBufferSource();
-            source.buffer = drumBuffer;
-            source.connect(audioContext.destination);
-            source.start(audioContext.currentTime + delay);
-        }
-
-        // ------------------------------------
-        // II. 声音控制
-        // ------------------------------------
-        
-        /** 开始持续音 */
-        function startSound(h, s, l) {
-            if (l === 0) {
-                // 黑色 (L=0) 仅播放鼓点一次
-                playDrum();
-                return;
-            }
-
-            if (currentOscillator) stopSound();
-            
-            const { frequency, gain } = getSoundParams(h, s, l);
-
-            currentOscillator = audioContext.createOscillator();
-            currentGain = audioContext.createGain();
-
-            // 设置音色和频率
-            currentOscillator.type = 'sine'; // 可以尝试 'sawtooth' 或 'square'
-            currentOscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-
-            // 设置音量
-            currentGain.gain.setValueAtTime(gain, audioContext.currentTime);
-
-            // 连接节点：振荡器 -> 增益 -> 扬声器
-            currentOscillator.connect(currentGain);
-            currentGain.connect(audioContext.destination);
-
-            currentOscillator.start();
-        }
-
-        /** 停止持续音 */
-        function stopSound() {
-            if (currentOscillator) {
-                // 使用 AudioParam.linearRampToValueAtTime 创建一个淡出效果
-                currentGain.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1); // 100ms 淡出
-                
-                // 在淡出完成后停止振荡器
-                currentOscillator.stop(audioContext.currentTime + 0.1); 
-            }
-            currentOscillator = null;
-            currentGain = null;
-        }
-
-        // ------------------------------------
-        // III. 绘画与交互
-        // ------------------------------------
-        
-        /** 更新颜色显示和预览音效 */
-        function updateColorAndPreview() {
-            const h = parseInt(hSlider.value);
-            const s = parseInt(sSlider.value);
-            const l = parseInt(lSlider.value);
-            
-            hValueDisplay.textContent = h;
-            sValueDisplay.textContent = s;
-            lValueDisplay.textContent = l;
-            
-            const cssColor = getCssColor(h, s, l);
-            currentColorDisplay.style.backgroundColor = cssColor;
-
-            // 预览音效：在拖动滑块时播放短暂音
-            if (!isDrawing && audioContext) {
-                if (l === 0) {
-                    playDrum();
-                } else {
-                    const { frequency, gain } = getSoundParams(h, s, l);
-                    
-                    const osc = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-
-                    osc.type = 'triangle'; 
-                    osc.frequency.setValueAtTime(frequency, audioContext.currentTime);
-                    gainNode.gain.setValueAtTime(gain * 0.5, audioContext.currentTime); // 预览音稍轻
-
-                    osc.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-
-                    osc.start();
-                    osc.stop(audioContext.currentTime + 0.15); // 150ms 预览音
-                }
-            }
-        }
-
-        /** 更新笔刷大小显示 */
-        function updateBrushSize() {
-            document.getElementById('sizeValue').textContent = sizeSlider.value;
-        }
-
-        /** 绘制笔画 */
-        function draw(e) {
-            if (!isDrawing) return;
-            const h = parseInt(hSlider.value);
-            const s = parseInt(sSlider.value);
-            const l = parseInt(lSlider.value);
-
-            ctx.beginPath();
-            ctx.moveTo(lastX, lastY);
-            ctx.lineTo(e.offsetX, e.offsetY);
-            ctx.strokeStyle = getCssColor(h, s, l);
-            ctx.lineWidth = sizeSlider.value;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-
-            [lastX, lastY] = [e.offsetX, e.offsetY];
-
-            // 如果是持续音，可以根据移动速度/位置更新音量/频率，但为简化此处省略。
-        }
-
-        /** 开始绘画事件 */
-        function startDrawing(e) {
-            // 确保音频上下文已激活（用户交互后才能激活）
-            initializeAudio();
-
-            isDrawing = true;
-            [lastX, lastY] = [e.offsetX, e.offsetY];
-
-            const h = parseInt(hSlider.value);
-            const s = parseInt(sSlider.value);
-            const l = parseInt(lSlider.value);
-            const size = parseInt(sizeSlider.value);
-
-            // 启动持续音 (L > 0) 或鼓点 (L = 0)
-            startSound(h, s, l);
-            
-            // 录制逻辑
-            if (isRecording) {
-                // 记录前一个笔画结束到当前笔画开始的空白时间
-                const now = Date.now();
-                if (currentStroke && currentStroke.type === 'stroke') {
-                    // 记录上一笔画的结束时间
-                    currentStroke.duration = now - currentStroke.startTime;
-                    recordedStrokes.push(currentStroke);
-                }
-                
-                // 记录新的笔画
-                currentStroke = {
-                    startTime: now,
-                    h: h,
-                    s: s,
-                    l: l,
-                    size: size,
-                    points: [{ x: lastX, y: lastY }],
-                    type: (l === 0) ? 'drum' : 'stroke', // 黑色鼓点只记录一次点击
-                };
-            }
-
-            draw(e); // 绘制第一个点
-        }
-
-        /** 结束绘画事件 */
-        function stopDrawing() {
-            if (!isDrawing) return;
-            isDrawing = false;
-            stopSound();
-
-            // 录制逻辑：结束当前笔画并加入记录
-            if (isRecording && currentStroke) {
-                const now = Date.now();
-                if (currentStroke.type === 'stroke') {
-                    currentStroke.duration = now - currentStroke.startTime;
-                    recordedStrokes.push(currentStroke);
-                } else if (currentStroke.type === 'drum') {
-                    // 鼓点只需要一个点，duration 很短
-                    currentStroke.duration = 50; 
-                    recordedStrokes.push(currentStroke);
-                }
-                currentStroke = null;
-            }
-        }
-        
-        // 监听绘画事件
-        canvas.addEventListener('mousedown', startDrawing);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('mouseout', stopDrawing); // 鼠标移出画布也停止
-        
-        // 初始化颜色和笔刷大小显示
-        updateColorAndPreview();
-        updateBrushSize();
-        
-        // ------------------------------------
-        // IV. 录制与编曲功能 (简化版)
-        // ------------------------------------
-        
-        const recordBtn = document.getElementById('recordBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const playBtn = document.getElementById('playBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        
-        function handleRecord() {
-            isRecording = true;
-            recordingStartTime = Date.now();
-            currentStroke = null; // 清空当前未完成的笔画
-            
-            // 每次录制都叠加，所以不清空 previous recordedStrokes
-            recordBtn.classList.add('disabled');
-            stopBtn.classList.remove('disabled');
-            playBtn.classList.add('disabled');
-            console.log("🔴 开始录制...");
-        }
-
-        function handleStop() {
-            if (!isRecording) return;
-            isRecording = false;
-            
-            // 确保结束上一个笔画/事件
-            if (currentStroke) {
-                const now = Date.now();
-                if (currentStroke.type === 'stroke') {
-                    currentStroke.duration = now - currentStroke.startTime;
-                    recordedStrokes.push(currentStroke);
-                } else if (currentStroke.type === 'drum') {
-                    currentStroke.duration = 50; 
-                    recordedStrokes.push(currentStroke);
-                }
-            }
-            currentStroke = null;
-            
-            recordBtn.classList.remove('disabled');
-            stopBtn.classList.add('disabled');
-            playBtn.classList.remove('disabled');
-            console.log(`⏹ 停止录制。记录了 ${recordedStrokes.length} 个事件。`);
-            
-            // 自动播放预览
-            handlePlay(); 
-        }
-
-        /** 播放录制的笔画和声音 */
-        function handlePlay() {
-            if (recordedStrokes.length === 0) {
-                console.log("没有录制数据可播放。");
-                return;
-            }
-            
-            console.log("▶️ 播放中...");
-            playBtn.classList.add('disabled');
-            recordBtn.classList.add('disabled');
-            
-            // 清空画布但不清空记录
-            ctx.clearRect(0, 0, canvas.width, canvas.height); 
-
-            let maxDuration = 0;
-            
-            recordedStrokes.forEach(stroke => {
-                const { startTime, duration, h, s, l, size, type } = stroke;
-                const endTime = startTime + duration;
-                maxDuration = Math.max(maxDuration, endTime);
-                
-                const delaySeconds = (startTime - recordingStartTime) / 1000;
-                
-                if (type === 'drum') {
-                    // 鼓点：仅在开始时播放一次
-                    setTimeout(() => {
-                        playDrum();
-                        // 绘制一个点来表示鼓点事件
-                        ctx.fillStyle = getCssColor(h, s, l);
-                        ctx.beginPath();
-                        ctx.arc(stroke.points[0].x, stroke.points[0].y, size / 2, 0, Math.PI * 2);
-                        ctx.fill();
-                    }, startTime - recordingStartTime);
-                } else if (type === 'stroke') {
-                    // 持续音：开始和停止声音
-                    
-                    // 1. 声音开始
-                    setTimeout(() => {
-                        startSound(h, s, l);
-                    }, startTime - recordingStartTime);
-
-                    // 2. 声音和绘画停止 (延迟时间是总时长)
-                    setTimeout(() => {
-                        stopSound();
-                    }, endTime - recordingStartTime);
-                    
-                    // 3. 简化绘画：这里我们只画一条线代表笔画，真正的轨迹需要记录所有 points
-                    // 复杂的轨迹播放需要更多数据和循环，此处为简化示例
-                    setTimeout(() => {
-                         const startP = stroke.points[0];
-                         const endP = stroke.points[stroke.points.length - 1]; // 实际应用中需要记录并回放所有点
-                         
-                         ctx.beginPath();
-                         ctx.moveTo(startP.x, startP.y);
-                         ctx.lineTo(endP.x + 1, endP.y + 1); // 确保即使是短点也会被绘制
-                         ctx.strokeStyle = getCssColor(h, s, l);
-                         ctx.lineWidth = size;
-                         ctx.lineCap = 'round';
-                         ctx.stroke();
-                    }, startTime - recordingStartTime);
-                }
+                // Set data-index for identification
+                target.setAttribute('data-index', index);
             });
             
-            // 播放完成后重新启用按钮
-            setTimeout(() => {
-                playBtn.classList.remove('disabled');
-                recordBtn.classList.remove('disabled');
-                console.log("播放结束。");
-            }, maxDuration - recordingStartTime + 200); // 额外200ms确保声音停止
+            // Document events for dragging
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('touchmove', doDragTouch);
+            document.addEventListener('mouseup', stopDrag);
+            document.addEventListener('touchend', stopDrag);
+            document.addEventListener('touchcancel', stopDrag);
         }
         
-        function handleClear() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            recordedStrokes = [];
-            currentStroke = null;
-            isRecording = false;
+        // Mouse drag functions
+        function startDrag(e) {
+            e.preventDefault();
+            isDragging = true;
+            dragTarget = e.target;
+            dragIndex = parseInt(dragTarget.getAttribute('data-index'));
             
-            recordBtn.classList.remove('disabled');
-            stopBtn.classList.add('disabled');
-            playBtn.classList.add('disabled');
-            console.log("画布和录音已清空。");
+            const rect = dragTarget.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            dragTarget.style.opacity = '0.8';
+            dragTarget.style.cursor = 'grabbing';
+        }
+        
+        function startDragTouch(e) {
+            if (e.touches.length !== 1) return;
+            e.preventDefault();
+            isDragging = true;
+            dragTarget = e.target;
+            dragIndex = parseInt(dragTarget.getAttribute('data-index'));
+            
+            const rect = dragTarget.getBoundingClientRect();
+            dragOffset.x = e.touches[0].clientX - rect.left;
+            dragOffset.y = e.touches[0].clientY - rect.top;
+            
+            dragTarget.style.opacity = '0.8';
+        }
+        
+        function doDrag(e) {
+            if (!isDragging || !dragTarget) return;
+            e.preventDefault();
+            
+            const x = e.clientX - dragOffset.x;
+            const y = e.clientY - dragOffset.y;
+            
+            updateTargetPosition(x, y);
+        }
+        
+        function doDragTouch(e) {
+            if (!isDragging || !dragTarget || e.touches.length !== 1) return;
+            e.preventDefault();
+            
+            const x = e.touches[0].clientX - dragOffset.x;
+            const y = e.touches[0].clientY - dragOffset.y;
+            
+            updateTargetPosition(x, y);
+        }
+        
+        function updateTargetPosition(x, y) {
+            const screenWidth = window.innerWidth;
+            const screenHeight = window.innerHeight;
+            
+            // Calculate percentage position
+            const percentX = (x + 25) / screenWidth; // +25 for center offset
+            const percentY = (y + 25) / screenHeight; // +25 for center offset
+            
+            // Clamp to screen bounds
+            const clampedX = Math.max(0.05, Math.min(0.95, percentX));
+            const clampedY = Math.max(0.05, Math.min(0.95, percentY));
+            
+            // Update CSS position
+            dragTarget.style.left = `${clampedX * 100}%`;
+            dragTarget.style.top = `${clampedY * 100}%`;
+            
+            // Update targetPoints array for color detection
+            targetPoints[dragIndex] = { x: clampedX, y: clampedY };
+        }
+        
+        function stopDrag() {
+            if (!isDragging || !dragTarget) return;
+            
+            isDragging = false;
+            dragTarget.style.opacity = '1';
+            dragTarget.style.cursor = 'move';
+            dragTarget = null;
+            dragIndex = -1;
+        }
+        
+        // Toggle individual track function
+        function toggleTrack(trackIndex) {
+            activeTracks[trackIndex] = !activeTracks[trackIndex];
+            
+            // Update button text
+            const button = document.querySelectorAll('.toggle-btn')[trackIndex];
+            button.textContent = activeTracks[trackIndex] ? 'ON' : 'OFF';
+            
+            // Update indicator
+            if (activeTracks[trackIndex]) {
+                indicatorElements[trackIndex].classList.add('active');
+                targetElements[trackIndex].style.display = 'block';
+            } else {
+                indicatorElements[trackIndex].classList.remove('active');
+                targetElements[trackIndex].style.display = 'none';
+                
+                // Stop sound for disabled track
+                if (currentOscillators[trackIndex]) {
+                    currentOscillators[trackIndex].stop();
+                    currentOscillators[trackIndex] = null;
+                }
+            }
+        }
+        
+        // Click to start camera
+        function startCameraOnClick() {
+            if (cameraStarted) return;
+            
+            cameraStarted = true;
+            colorInfo.textContent = 'Starting camera...';
+            
+            // Start camera
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: { ideal: currentFacingMode },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                } 
+            })
+            .then(stream => {
+                video.srcObject = stream;
+                colorInfo.style.top = '25px';
+                colorInfo.style.left = '25px';
+                colorInfo.style.transform = 'translate(0, 0)';
+                colorInfo.style.fontSize = '20px';
+                colorInfo.style.padding = '25px';
+                colorInfo.textContent = 'Back camera active - Detecting colors';
+                startColorDetection();
+            })
+            .catch(err => {
+                console.log('Back camera failed:', err);
+                colorInfo.textContent = 'Back camera failed, trying front camera';
+                // Fallback to front camera
+                navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    colorInfo.style.top = '25px';
+                    colorInfo.style.left = '25px';
+                    colorInfo.style.transform = 'translate(0, 0)';
+                    colorInfo.style.fontSize = '20px';
+                    colorInfo.style.padding = '25px';
+                    colorInfo.textContent = 'Camera active - Detecting colors';
+                    startColorDetection();
+                })
+                .catch(finalErr => {
+                    colorInfo.textContent = 'Camera failed: ' + finalErr.message;
+                });
+            });
         }
 
-        recordBtn.addEventListener('click', handleRecord);
-        stopBtn.addEventListener('click', handleStop);
-        playBtn.addEventListener('click', handlePlay);
-        clearBtn.addEventListener('click', handleClear);
-
+        // Start color detection
+        function startColorDetection() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            function detectColor() {
+                if (!video.srcObject || video.videoWidth === 0) {
+                    requestAnimationFrame(detectColor);
+                    return;
+                }
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+                
+                let infoText = 'Color detection active<br>';
+                
+                // Detect colors for active tracks only
+                for (let i = 0; i < 3; i++) {
+                    if (!activeTracks[i]) continue;
+                    
+                    const point = targetPoints[i];
+                    const x = Math.floor(point.x * canvas.width);
+                    const y = Math.floor(point.y * canvas.height);
+                    const pixel = ctx.getImageData(x, y, 1, 1).data;
+                    const [r, g, b] = pixel;
+                    const hsl = rgbToHsl(r, g, b);
+                    const [h, s, l] = hsl;
+                    
+                    infoText += `Track ${i+1}: RGB(${r},${g},${b})<br>`;
+                    
+                    // Play corresponding sound
+                    playSoundFromColor(h, s, l, i);
+                }
+                
+                colorInfo.innerHTML = infoText;
+                requestAnimationFrame(detectColor);
+            }
+            
+            detectColor();
+        }
+        
+        // Enhanced color to sound function with adjusted blue track volume
+        function playSoundFromColor(hue, saturation, lightness, pointIndex) {
+            const now = Date.now();
+            const timeSinceLastPlay = now - lastPlayTimes[pointIndex];
+            
+            // Smooth mode: debounce
+            if (isSmoothMode) {
+                const hueDifference = Math.abs(hue - lastHues[pointIndex]);
+                if (hueDifference < 0.03 && timeSinceLastPlay < 300) {
+                    return;
+                }
+            }
+            
+            lastHues[pointIndex] = hue;
+            lastPlayTimes[pointIndex] = now;
+            
+            // Stop previous sound for this point
+            if (currentOscillators[pointIndex]) {
+                currentOscillators[pointIndex].stop();
+            }
+            
+            // Enhanced white detection
+            const isDesaturated = saturation < 0.10;
+            const isLightGray = lightness > 0.82;
+            
+            if (isLightGray || (isDesaturated && lightness > 0.5)) {
+                // Mute for white/light gray
+                return;
+            }
+            
+            // Black drum (darker than threshold)
+            if (lightness < 0.15) {
+                playDrum(pointIndex);
+                return;
+            }
+            
+            // Extended musical scale for more distinct notes
+            const extendedScale = [
+                130.81, 146.83, 164.81, 174.61, 196.00, 220.00, 246.94,  // Lower octave
+                261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88,   // Middle octave
+                523.25, 587.33, 659.25, 698.46, 783.99, 880.00, 987.77    // Higher octave
+            ];
+            
+            // Note selection
+            const noteIndex = Math.floor(hue * extendedScale.length);
+            const baseFrequency = extendedScale[noteIndex];
+            
+            // ENHANCED: More obvious octave control (wider range)
+            const octaveRange = Math.floor(saturation * 4); // 0, 1, 2, or 3 octave shift
+            const frequency = baseFrequency * Math.pow(2, octaveRange);
+            
+            // ADJUSTED: Volume adjustment for blue track (pointIndex 2)
+            let baseVolume = Math.pow(lightness, 1.2) * 0.8;
+            
+            // Reduce volume for blue track (Track 3) by 40%
+            if (pointIndex === 2) {
+                baseVolume *= 0.6; // 60% of original volume
+            }
+            
+            const volume = baseVolume;
+            
+            // Different waveforms for different tracks
+            const waveTypes = ['sine', 'triangle', 'sawtooth'];
+            const waveType = waveTypes[pointIndex % waveTypes.length];
+            
+            // Create sound
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = waveType;
+            oscillator.frequency.value = frequency;
+            
+            // Smooth fade in/out
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.08);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            currentOscillators[pointIndex] = oscillator;
+            
+            // Auto stop after 0.6 seconds
+            setTimeout(() => {
+                if (currentOscillators[pointIndex] === oscillator) {
+                    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
+                    setTimeout(() => {
+                        oscillator.stop();
+                    }, 150);
+                }
+            }, 600);
+        }
+        
+        function playDrum(pointIndex) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            // Different drum sounds for different points
+            const baseFreq = [70, 90, 110][pointIndex % 3];
+            
+            // Reduce drum volume for blue track
+            let drumVolume = 0.6;
+            if (pointIndex === 2) {
+                drumVolume *= 0.6; // 60% of original volume
+            }
+            
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 0.4, audioContext.currentTime + 0.12);
+            
+            gainNode.gain.setValueAtTime(drumVolume, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.18);
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.18);
+        }
+        
+        // RGB to HSL
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            
+            if (max === min) {
+                h = s = 0;
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return [h, s, l];
+        }
+        
+        // Control functions
+        function toggleSmooth() {
+            isSmoothMode = !isSmoothMode;
+            document.querySelectorAll('button')[5].textContent = 
+                `Smooth: ${isSmoothMode ? 'ON' : 'OFF'}`;
+        }
+        
+        function toggleCamera() {
+            if (!cameraStarted) return;
+            
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            // Stop current video stream
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            // Restart camera
+            cameraStarted = false;
+            startCameraOnClick();
+        }
+        
+        // Click event listeners
+        document.addEventListener('click', function(e) {
+            // Don't start camera if clicking on controls or targets
+            if (e.target.closest('#controls') || e.target.closest('.target-point')) {
+                return;
+            }
+            startCameraOnClick();
+            // Also resume audio context
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
+        
+        document.addEventListener('touchstart', function(e) {
+            // Don't start camera if touching controls or targets
+            if (e.target.closest('#controls') || e.target.closest('.target-point')) {
+                return;
+            }
+            startCameraOnClick();
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
+        
+        // Initialize drag events
+        initDragEvents();
     </script>
 </body>
 </html>
